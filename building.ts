@@ -4,8 +4,8 @@ type PromsiseReject<T> = (reason : T)=>void;
 
 type PromiseExecutor<T, K> = (resolve: PromsiseResolve<T>, reject:PromsiseReject<K>) => void;
 
-type PromiseThen<T> = (value:T | undefined)=> void;
-type PromiseCatch<T> = (reason:T | undefined)=> void;
+type PromiseThen<T, R> = (value:T)=> R;
+type PromiseCatch<T, R> = (reason:T)=> R;
 type PromiseFinally= ()=> void;
 
 enum PromiseState{
@@ -17,8 +17,8 @@ enum PromiseState{
 class MyPromise<T, K>{
     private _state: PromiseState = PromiseState.PENDING
     
-    private _successCallbackHandler : PromiseThen<T>[]= [];
-    private _failureCallbackHandler : PromiseCatch<K>[]= [];
+    private _successCallbackHandler : ((value: T)=> void)[]=[];
+    private _failureCallbackHandler : ((reason : K)=>void)[] = [];
     private _finallyCallbackHandler : PromiseFinally | undefined = undefined;
     private _value : T | undefined = undefined;
     private _reason : K | undefined = undefined;
@@ -27,24 +27,53 @@ class MyPromise<T, K>{
         executor(this._promiseResolver.bind(this), this._promiseRejector.bind(this));
     }   
 
-    public then(handlerFn: PromiseThen<T>){
-        if(this._state===PromiseState.FULFILLED){
-            handlerFn(this._value);
+    public then<R>(
+        handlerFn: PromiseThen<T, R>): MyPromise<R, K>{
+            return new MyPromise<R, K>((resolve, reject)=>{
+                const callback = (value: T)=>{
+                    try{
+                        const result = handlerFn(value);
+                        resolve(result);
+                    }
+                    catch(error){
+                        reject(error as K);
+                    }
+                };
+                if(this._state === PromiseState.FULFILLED){
+                    callback(this._value as T);
+                }
+                else if(this._state === PromiseState.PENDING){
+                    this._successCallbackHandler.push(callback);
+                }
+                else if(this._state === PromiseState.REJECTED){
+                    reject(this._reason as K);
+                }
+            })
         }
-        else{
-            this._successCallbackHandler.push(handlerFn);
-        }     
-        return this;
-    }
 
-    public catch(handlerFn: PromiseCatch<K>){
-        if(this._state === PromiseState.REJECTED){
-            handlerFn(this._reason);
-        }
-        else{
-            this._failureCallbackHandler.push(handlerFn);
-        }
-        return this;
+    public catch<R>(
+        handlerFn: PromiseCatch<K, R>
+    ): MyPromise<R, K>{
+        return new MyPromise<R, K>((resolve, reject)=>{
+            const callback = (reason : K)=>{
+                try{
+                    const result = handlerFn(reason);
+                    resolve(result);
+                }
+                catch(error){
+                    reject(error as K);
+                }
+            };
+            if(this._state === PromiseState.REJECTED){
+                callback(this._reason as K);
+            }
+            else if(this._state === PromiseState.PENDING){
+                this._failureCallbackHandler.push(callback);
+            }
+            else if (this._state === PromiseState.FULFILLED) {
+                resolve(this._value as unknown as R);
+            }
+        });
     }
 
     public finally(handlerFn:PromiseFinally){
@@ -53,10 +82,12 @@ class MyPromise<T, K>{
         }
         this._finallyCallbackHandler = handlerFn;
 
+        return this;
+
     }
 
     private _promiseResolver(value : T){
-        if (this._state === PromiseState.FULFILLED) return;
+        if (this._state !== PromiseState.PENDING) return;
         this._state = PromiseState.FULFILLED;
         this._value = value;
         this._successCallbackHandler.forEach(cb=>cb(value));
@@ -66,7 +97,7 @@ class MyPromise<T, K>{
     }
 
     private _promiseRejector(reason : K){
-        if (this._state === PromiseState.REJECTED) return;
+        if (this._state !== PromiseState.PENDING) return;
         
         this._state = PromiseState.REJECTED;
         this._reason = reason; 
@@ -92,13 +123,15 @@ customPromise().then(()=> console.log('Custom Done')).catch((reason)=>{
     
 })
 
-waitFor(5)
+waitFor(2)
 .then((value)=>{
-    console.log(`Promise Resolve`, value);
+    console.log("First:", value);
+    return value*2;
 })
-.catch((reason)=>{
-    console.log('Rejected', reason);
+.then((value)=>{
+    console.log("Second:", value);
+    return value+10;
 })
-.finally(()=>{
-    console.log('All Good');
+.then((value)=>{
+    console.log("Third:", value);
 });
