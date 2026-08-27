@@ -2,23 +2,23 @@
 
 A simplified implementation of JavaScript's `Promise` built from scratch using **TypeScript**.
 
-This project focuses on understanding how Promises work internally rather than simply using the native `Promise` API.
+The goal of this project is to understand how Promises work internally by implementing their core behavior without relying on the native `Promise` API.
 
 ## Features
 
-* Promise state management
-
-  * `PENDING`
-  * `FULFILLED`
-  * `REJECTED`
-* Generic success and rejection types
-* Custom `resolve()` and `reject()` functions
-* `.then()` support
-* `.catch()` support
-* `.finally()` support
-* Callback queues for pending Promises
-* Basic protection against multiple settlements
-* Promise chaining *(planned)*
+- Promise state management
+  - `PENDING`
+  - `FULFILLED`
+  - `REJECTED`
+- Generic success and rejection types
+- Custom `resolve()` and `reject()` functions
+- `.then()` support
+- `.catch()` support
+- `.finally()` support
+- Callback queues for pending Promises
+- Promise chaining
+- Basic error propagation
+- Protection against multiple Promise settlements
 
 ## How It Works
 
@@ -42,9 +42,9 @@ resolve(value)
       ↓
 PENDING → FULFILLED
       ↓
-store value
+store resolved value
       ↓
-execute .then() callbacks
+execute pending .then() callbacks
       ↓
 execute .finally()
 ```
@@ -58,9 +58,9 @@ reject(reason)
       ↓
 PENDING → REJECTED
       ↓
-store reason
+store rejection reason
       ↓
-execute .catch() callbacks
+execute pending .catch() callbacks
       ↓
 execute .finally()
 ```
@@ -75,8 +75,8 @@ class MyPromise<T, K>
 
 Where:
 
-* `T` represents the type of the resolved value.
-* `K` represents the type of the rejection reason.
+- `T` represents the type of the resolved value.
+- `K` represents the type of the rejection reason.
 
 For example:
 
@@ -84,12 +84,10 @@ For example:
 MyPromise<number, string>
 ```
 
-means:
+represents a Promise that:
 
-```text
-resolve → number
-reject  → string
-```
+- resolves → `number`
+- rejects → `string`
 
 ## Executor
 
@@ -101,7 +99,7 @@ new MyPromise((resolve, reject) => {
 });
 ```
 
-Internally, the executor receives the custom resolver and rejector:
+The executor receives two functions:
 
 ```text
 executor
@@ -115,7 +113,7 @@ The resolver and rejector are bound to the current `MyPromise` instance using `.
 
 ## Callback Queues
 
-If `.then()` or `.catch()` is called while the Promise is still pending, the callback cannot be executed immediately.
+When `.then()` or `.catch()` is called while the Promise is still pending, the callback cannot be executed immediately.
 
 Instead, it is stored in a callback queue.
 
@@ -152,193 +150,12 @@ This allows callbacks to be registered before an asynchronous operation finishes
 
 ## `.then()`
 
-`.then()` is responsible for handling successful Promise completion.
+`.then()` handles successful Promise completion.
 
-If the Promise is already fulfilled:
+- If the Promise is already fulfilled, the callback is executed immediately.
+- If the Promise is still pending, the callback is stored and executed when the Promise is fulfilled.
 
-```ts
-promise.then(handler);
-```
-
-the handler is executed immediately.
-
-If the Promise is still pending, the handler is stored and executed later when `resolve()` is called.
-
-```text
-              Promise
-                 │
-          ┌──────┴──────┐
-          ↓             ↓
-     FULFILLED        PENDING
-          │             │
-          ↓             ↓
-      run handler    store handler
-                        │
-                        ↓
-                    resolve()
-                        │
-                        ↓
-                   run handler
-```
-
-## `.catch()`
-
-`.catch()` handles rejected Promises.
-
-If the Promise is already rejected, the callback is executed immediately.
-
-If the Promise is pending, the callback is stored until `reject()` is called.
-
-```text
-              Promise
-                 │
-          ┌──────┴──────┐
-          ↓             ↓
-      REJECTED        PENDING
-          │             │
-          ↓             ↓
-      run catch      store catch
-                        │
-                        ↓
-                      reject()
-                        │
-                        ↓
-                    run catch
-```
-
-## `.finally()`
-
-`.finally()` is executed after the Promise settles, regardless of whether it was fulfilled or rejected.
-
-```ts
-promise.finally(() => {
-    console.log("Done");
-});
-```
-
-It can run after either:
-
-```text
-resolve() ──→ finally()
-```
-
-or:
-
-```text
-reject() ──→ finally()
-```
-
-## Example
-
-```ts
-const waitFor = (s: number) =>
-    new MyPromise<number, number>((resolve, reject) => {
-        setTimeout(() => resolve(s), s * 1000);
-    });
-
-waitFor(5)
-    .then((value) => {
-        console.log("Promise Resolve:", value);
-    })
-    .catch((reason) => {
-        console.log("Rejected:", reason);
-    })
-    .finally(() => {
-        console.log("All Good");
-    });
-```
-
-After five seconds:
-
-```text
-Promise Resolve: 5
-All Good
-```
-
-## Rejection Example
-
-```ts
-function customPromise() {
-    return new MyPromise<string, string>((resolve, reject) => {
-        reject("Okay");
-    });
-}
-
-customPromise()
-    .then(() => {
-        console.log("Custom Done");
-    })
-    .catch((reason) => {
-        console.log("Rejected Because:", reason);
-    });
-```
-
-Output:
-
-```text
-Rejected Because: Okay
-```
-
-## Architecture
-
-The implementation can be viewed as a small state machine:
-
-```text
-                   MyPromise
-                       │
-             ┌─────────┴─────────┐
-             ↓                   ↓
-          resolve              reject
-             ↓                   ↓
-        FULFILLED             REJECTED
-             │                   │
-             ↓                   ↓
-        _value = T           _reason = K
-             │                   │
-             ↓                   ↓
-        .then() callbacks    .catch() callbacks
-             │                   │
-             └─────────┬─────────┘
-                       ↓
-                    .finally()
-```
-
-## Current Limitations
-
-This is intentionally a **simplified Promise implementation** and does not completely replicate the native JavaScript Promise specification.
-
-The biggest missing feature is **true Promise chaining**.
-
-Currently:
-
-```ts
-.then(handler)
-```
-
-returns the same Promise:
-
-```ts
-return this;
-```
-
-Therefore, the implementation does not yet create a new Promise for every `.then()`.
-
-A proper Promise implementation should support:
-
-```ts
-waitFor(2)
-    .then((value) => {
-        return value * 2;
-    })
-    .then((value) => {
-        return value + 10;
-    })
-    .then((value) => {
-        console.log(value);
-    });
-```
-
-The expected flow is:
+The important part of chaining is that `.then()` creates and returns a new Promise.
 
 ```text
 Promise 1
@@ -350,44 +167,365 @@ Promise 2
     │ .then()
     ↓
 Promise 3
-    │
-    │ .then()
-    ↓
-Promise 4
 ```
 
-Each `.then()` should return a **new Promise** whose resolved value comes from the previous callback.
+The return value of one `.then()` becomes the resolved value of the next Promise.
+
+### Example
+
+```ts
+waitFor(2)
+    .then((value) => {
+        console.log("First:", value);
+        return value * 2;
+    })
+    .then((value) => {
+        console.log("Second:", value);
+        return value + 10;
+    })
+    .then((value) => {
+        console.log("Third:", value);
+    });
+```
+
+Output:
+
+```text
+First: 2
+Second: 4
+Third: 14
+```
+
+The flow is:
+
+```text
+waitFor(2)
+    ↓
+Promise 1 resolves with 2
+    ↓
+First .then()
+    ↓
+return 2 * 2
+    ↓
+Promise 2 resolves with 4
+    ↓
+Second .then()
+    ↓
+return 4 + 10
+    ↓
+Promise 3 resolves with 14
+    ↓
+Third .then()
+```
+
+## Promise Chaining
+
+Promise chaining is implemented by returning a new `MyPromise` from `.then()`:
+
+```ts
+public then<R>(
+    handlerFn: PromiseThen<T, R>
+): MyPromise<R, K> {
+    return new MyPromise<R, K>((resolve, reject) => {
+        // ...
+    });
+}
+```
+
+When the callback executes:
+
+```ts
+const result = handlerFn(value);
+resolve(result);
+```
+
+the returned value is used to resolve the new Promise.
+
+Conceptually:
+
+```text
+Previous Promise
+       │
+       │ value
+       ↓
+   handlerFn()
+       │
+       │ result
+       ↓
+ resolve(result)
+       │
+       ↓
+ New Promise
+```
+
+This allows:
+
+```ts
+promise
+    .then(...)
+    .then(...)
+    .then(...);
+```
+
+where each `.then()` operates on the result of the previous one.
+
+## Error Propagation
+
+Errors thrown inside a `.then()` callback are caught and used to reject the Promise returned by that `.then()`.
+
+```ts
+waitFor(2)
+    .then((value) => {
+        throw "Something went wrong";
+    })
+    .catch((reason) => {
+        console.log("Caught:", reason);
+    });
+```
+
+Flow:
+
+```text
+Promise fulfills
+      ↓
+.then() callback executes
+      ↓
+callback throws
+      ↓
+catch(error)
+      ↓
+reject(error)
+      ↓
+.catch() receives the error
+```
+
+Output:
+
+```text
+Caught: Something went wrong
+```
+
+## `.catch()`
+
+`.catch()` handles rejected Promises.
+
+- If the Promise is already rejected, the handler executes immediately.
+- If the Promise is pending, the handler is stored until rejection occurs.
+- If the Promise is fulfilled, the fulfilled value is passed through to the next Promise in the chain.
+
+### Example
+
+```ts
+customPromise()
+    .then(() => {
+        console.log("Success");
+    })
+    .catch((reason) => {
+        console.log("Caught:", reason);
+        return "Recovered";
+    })
+    .then((value) => {
+        console.log("After catch:", value);
+    });
+```
+
+Output:
+
+```text
+Caught: Okay
+After catch: Recovered
+```
+
+## `.finally()`
+
+`.finally()` runs after the Promise settles, regardless of whether it was fulfilled or rejected.
+
+```ts
+promise.finally(() => {
+    console.log("Done");
+});
+```
+
+It can execute after either:
+
+```text
+resolve()
+   ↓
+finally()
+```
+
+or:
+
+```text
+reject()
+   ↓
+finally()
+```
+
+### Example
+
+```ts
+const waitFor = (s: number) =>
+    new MyPromise<number, number>((resolve, reject) => {
+        setTimeout(() => resolve(s), s * 1000);
+    });
+
+waitFor(2)
+    .then((value) => {
+        console.log("First:", value);
+        return value * 2;
+    })
+    .then((value) => {
+        console.log("Second:", value);
+        return value + 10;
+    })
+    .then((value) => {
+        console.log("Third:", value);
+    })
+    .finally(() => {
+        console.log("All Good");
+    });
+```
+
+Output:
+
+```text
+First: 2
+Second: 4
+Third: 14
+All Good
+```
+
+## Architecture
+
+The implementation can be viewed as a state machine combined with callback queues:
+
+```text
+                   MyPromise
+                       │
+                       ↓
+                    PENDING
+                   /       \
+                  /         \
+                 ↓           ↓
+            FULFILLED     REJECTED
+                 │           │
+                 ↓           ↓
+             _value       _reason
+                 │           │
+                 ↓           ↓
+            .then()       .catch()
+                 │           │
+                 └─────┬─────┘
+                       ↓
+                    finally
+```
+
+### Chaining Architecture
+
+```text
+       MyPromise<T>
+            │
+            │ .then(T → R)
+            ↓
+       MyPromise<R>
+            │
+            │ .then(R → P)
+            ↓
+       MyPromise<P>
+```
+
+Each `.then()` transforms one Promise into another Promise.
+
+## Implementation Details
+
+### State
+
+The current state is stored in:
+
+```ts
+private _state: PromiseState = PromiseState.PENDING;
+```
+
+### Resolved Value
+
+The successful result is stored in:
+
+```ts
+private _value: T | undefined = undefined;
+```
+
+### Rejection Reason
+
+The rejection reason is stored in:
+
+```ts
+private _reason: K | undefined = undefined;
+```
+
+### Success Callbacks
+
+Callbacks waiting for fulfillment are stored in:
+
+```ts
+private _successCallbackHandler: ((value: T) => void)[] = [];
+```
+
+### Failure Callbacks
+
+Callbacks waiting for rejection are stored in:
+
+```ts
+private _failureCallbackHandler: ((reason: K) => void)[] = [];
+```
+
+## Current Limitations
+
+This is still a simplified implementation and does not completely replicate the native JavaScript Promise specification.
+
+The following advanced behaviors are not fully implemented yet:
+
+- Returning another Promise from `.then()`
+- Thenable assimilation
+- Complete Promise resolution procedure
+- Full `.finally()` chaining behavior
+- Static methods such as `Promise.resolve()`
+- Static methods such as `Promise.reject()`
+- `Promise.all()`
+- `Promise.race()`
+- `Promise.allSettled()`
+- `Promise.any()`
+- Microtask queue behavior identical to native Promises
 
 ## Future Improvements
 
-* [ ] Implement true Promise chaining
-* [ ] Return a new Promise from `.then()`
-* [ ] Return a new Promise from `.catch()`
-* [ ] Implement error propagation through the chain
-* [ ] Handle callbacks that return another Promise
-* [ ] Implement proper Promise resolution / thenable assimilation
-* [ ] Improve `.finally()` chaining
-* [ ] Support multiple `.finally()` callbacks
-* [ ] Implement `MyPromise.resolve()`
-* [ ] Implement `MyPromise.reject()`
-* [ ] Implement `MyPromise.all()`
-* [ ] Implement `MyPromise.race()`
-* [ ] Implement `MyPromise.allSettled()`
+- [ ] Handle callbacks that return another `MyPromise`
+- [ ] Implement proper Promise resolution / thenable assimilation
+- [ ] Improve `.finally()` chaining
+- [ ] Implement `MyPromise.resolve()`
+- [ ] Implement `MyPromise.reject()`
+- [ ] Implement `MyPromise.all()`
+- [ ] Implement `MyPromise.race()`
+- [ ] Implement `MyPromise.allSettled()`
+- [ ] Implement `MyPromise.any()`
+- [ ] Match native Promise microtask behavior
 
 ## Learning Goal
 
-The goal of this project is to understand the mechanisms behind JavaScript Promises by implementing them from scratch.
+The goal of this project is to understand how JavaScript Promises work internally by implementing them from scratch.
 
-The implementation focuses on:
+The implementation covers the progression:
 
 ```text
-State Management
+Promise States
       ↓
-Asynchronous Completion
+resolve / reject
       ↓
 Callback Registration
       ↓
-Callback Execution
+Callback Queues
+      ↓
+.then() / .catch()
       ↓
 Promise Chaining
       ↓
@@ -398,14 +536,22 @@ Rather than treating Promises as a black box, this project explores how their co
 
 ## Tech Stack
 
-* TypeScript
-* JavaScript Runtime
-* `setTimeout` for asynchronous examples
+- TypeScript
+- JavaScript Runtime
+- `setTimeout`
 
 ## Status
 
 🚧 **Work in Progress**
 
-The current implementation supports basic Promise states, resolution, rejection, `.then()`, `.catch()`, and `.finally()`.
+The project currently supports:
 
-True Promise chaining and complete Promise resolution behavior are planned as the next step.
+- Promise state management
+- Resolution and rejection
+- `.then()`
+- `.catch()`
+- `.finally()`
+- Basic Promise chaining
+- Basic error propagation
+
+Advanced Promise resolution behavior and static Promise methods are planned for future iterations.
